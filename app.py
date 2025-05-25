@@ -17,60 +17,48 @@ def scan():
     if not website:
         return jsonify({"error": "Missing website parameter"}), 400
 
-    # Remove schemes
+    # Remove any schemes
     domain = website.replace("http://", "").replace("https://", "").strip("/")
     base_http = f"http://{domain}"
-    base_https = f"https://{domain}"
-    base_https_www = f"https://www.{domain}"
 
     message_lines = []
 
     try:
-        # 1️⃣ Check HTTP
+        # 1️⃣ HTTP Check
         response_http = requests.get(base_http, timeout=5, allow_redirects=False)
         status_http = response_http.status_code
 
         if status_http == 200:
             message_lines.append(f"{base_http} is up!")
-            message_lines.extend(["", ""])  # Fill up to 3 lines
+            message_lines.extend(["", ""])
             return jsonify({"result": "\n".join(message_lines)})
         elif 300 <= status_http < 310:
             message_lines.append(f"{base_http} is a redirect.")
-            # 2️⃣ Check HTTPS
+            # 2️⃣ Follow HTTPS redirects to final destination
             try:
-                response_https = requests.get(base_https, timeout=5, allow_redirects=False)
-                status_https = response_https.status_code
+                response_https = requests.get(f"https://{domain}", timeout=5, allow_redirects=True)
+                final_url = response_https.url
+                final_status = response_https.status_code
 
-                if status_https == 200:
-                    message_lines.append(f"{base_https} is up!")
-                    message_lines.append("")  # Fill up to 3 lines
-                    return jsonify({"result": "\n".join(message_lines)})
-                elif 300 <= status_https < 310:
-                    message_lines.append(f"{base_https} is a redirect.")
-                    # 3️⃣ Check HTTPS with www
-                    try:
-                        response_https_www = requests.get(base_https_www, timeout=5, allow_redirects=False)
-                        status_https_www = response_https_www.status_code
-
-                        if status_https_www == 200:
-                            message_lines.append(f"{base_https_www} is up!")
-                        else:
-                            message_lines.append("Website does not exist 😔")
-                    except requests.exceptions.RequestException:
-                        message_lines.append("Website does not exist 😔")
+                if final_status == 200:
+                    message_lines.append(f"{final_url} is up!")
+                elif final_status == 404:
+                    message_lines.append(f"{final_url} Page wasn't found 😔")
                 else:
                     message_lines.append("Website does not exist 😔")
             except requests.exceptions.RequestException:
                 message_lines.append("Website does not exist 😔")
         else:
             message_lines.append("Website does not exist 😔")
-            message_lines.extend(["", ""])  # Fill up to 3 lines
+            message_lines.extend(["", ""])
+            return jsonify({"result": "\n".join(message_lines)})
 
     except requests.exceptions.RequestException:
         message_lines.append("Website does not exist 😔")
-        message_lines.extend(["", ""])  # Fill up to 3 lines
+        message_lines.extend(["", ""])
+        return jsonify({"result": "\n".join(message_lines)})
 
-    # Fill up to exactly 3 lines
+    # Fill to 3 lines
     while len(message_lines) < 3:
         message_lines.append("")
 
