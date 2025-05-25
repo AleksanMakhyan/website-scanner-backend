@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import subprocess
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -17,10 +17,15 @@ def scan():
         return jsonify({"error": "Missing website parameter"}), 400
 
     try:
-        result = subprocess.check_output(["nmap", "-Pn", website], stderr=subprocess.STDOUT, text=True, timeout=30)
-        return jsonify({"result": result})
-    except subprocess.CalledProcessError as e:
-        return jsonify({"error": e.output}), 500
+        # Prepend http:// if not included
+        if not website.startswith(("http://", "https://")):
+            website = f"http://{website}"
+
+        response = requests.get(website, timeout=5)
+        if response.status_code == 200:
+            return jsonify({"result": f"{website} is up and running!"})
+        else:
+            return jsonify({"result": f"{website} responded with status code: {response.status_code}"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
