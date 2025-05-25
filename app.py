@@ -17,40 +17,60 @@ def scan():
     if not website:
         return jsonify({"error": "Missing website parameter"}), 400
 
-    # Remove any scheme from input
+    # Remove schemes
     domain = website.replace("http://", "").replace("https://", "").strip("/")
-    base_url_http = f"http://{domain}"
-    base_url_https = f"https://{domain}"
+    base_http = f"http://{domain}"
+    base_https = f"https://{domain}"
+    base_https_www = f"https://www.{domain}"
 
     message_lines = []
 
     try:
-        # Check HTTP status without following redirects
-        response_http = requests.get(base_url_http, timeout=5, allow_redirects=False)
-        status_code_http = response_http.status_code
+        # 1️⃣ Check HTTP
+        response_http = requests.get(base_http, timeout=5, allow_redirects=False)
+        status_http = response_http.status_code
 
-        if status_code_http == 200:
-            message_lines.append(f"{base_url_http} is up!")
-        elif 300 <= status_code_http < 310:
-            message_lines.append(f"{base_url_http} is a redirect.")
-            # Check HTTPS status if HTTP is a redirect
+        if status_http == 200:
+            message_lines.append(f"{base_http} is up!")
+            message_lines.extend(["", ""])  # Fill up to 3 lines
+            return jsonify({"result": "\n".join(message_lines)})
+        elif 300 <= status_http < 310:
+            message_lines.append(f"{base_http} is a redirect.")
+            # 2️⃣ Check HTTPS
             try:
-                response_https = requests.get(base_url_https, timeout=5, allow_redirects=False)
-                status_code_https = response_https.status_code
+                response_https = requests.get(base_https, timeout=5, allow_redirects=False)
+                status_https = response_https.status_code
 
-                if status_code_https == 200:
-                    message_lines.append(f"{base_url_https} is up!")
+                if status_https == 200:
+                    message_lines.append(f"{base_https} is up!")
+                    message_lines.append("")  # Fill up to 3 lines
+                    return jsonify({"result": "\n".join(message_lines)})
+                elif 300 <= status_https < 310:
+                    message_lines.append(f"{base_https} is a redirect.")
+                    # 3️⃣ Check HTTPS with www
+                    try:
+                        response_https_www = requests.get(base_https_www, timeout=5, allow_redirects=False)
+                        status_https_www = response_https_www.status_code
+
+                        if status_https_www == 200:
+                            message_lines.append(f"{base_https_www} is up!")
+                        else:
+                            message_lines.append("Website does not exist 😔")
+                    except requests.exceptions.RequestException:
+                        message_lines.append("Website does not exist 😔")
                 else:
                     message_lines.append("Website does not exist 😔")
             except requests.exceptions.RequestException:
                 message_lines.append("Website does not exist 😔")
         else:
             message_lines.append("Website does not exist 😔")
+            message_lines.extend(["", ""])  # Fill up to 3 lines
 
     except requests.exceptions.RequestException:
         message_lines.append("Website does not exist 😔")
+        message_lines.extend(["", ""])  # Fill up to 3 lines
 
-    # Ensure exactly 3 lines in the output for the frontend
+    # Fill up to exactly 3 lines
     while len(message_lines) < 3:
         message_lines.append("")
 
