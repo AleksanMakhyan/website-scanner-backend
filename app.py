@@ -17,68 +17,59 @@ def scan():
     if not website:
         return jsonify({"error": "Missing website parameter"}), 400
 
-    # Remove schemes
     domain = website.replace("http://", "").replace("https://", "").strip("/")
     base_http = f"http://{domain}"
     base_https = f"https://{domain}"
 
-    message_lines = []
+    # Store status codes
+    status_http = "N/A"
+    status_https = "N/A"
+    status_final = "N/A"
+    final_url = "N/A"
 
     try:
-        # 1️⃣ HTTP Check
+        # HTTP check
         response_http = requests.get(base_http, timeout=5, allow_redirects=False)
         status_http = response_http.status_code
 
         if status_http == 200:
-            message_lines.append(f"{base_http} is up!")
-            message_lines.extend(["", ""])
-            return jsonify({"result": "\n".join(message_lines)})
+            final_url = base_http
+            status_final = status_http
         elif 300 <= status_http < 310:
-            message_lines.append(f"{base_http} is a redirect.")
-            # 2️⃣ HTTPS Check without following redirects
+            # HTTPS check
             try:
                 response_https = requests.get(base_https, timeout=5, allow_redirects=False)
                 status_https = response_https.status_code
 
                 if status_https == 200:
-                    message_lines.append(f"{base_https} is up!")
+                    final_url = base_https
+                    status_final = status_https
                 elif 300 <= status_https < 310:
-                    message_lines.append(f"{base_https} is a redirect.")
+                    # Follow HTTPS redirects
+                    try:
+                        response_final = requests.get(base_https, timeout=5, allow_redirects=True)
+                        final_url = response_final.url
+                        status_final = response_final.status_code
+                    except requests.exceptions.RequestException:
+                        final_url = "Website does not exist 😔"
+                        status_final = "N/A"
                 else:
-                    message_lines.append("Website does not exist 😔")
-
-                # 3️⃣ Follow HTTPS redirects to final landing page
-                try:
-                    response_final = requests.get(base_https, timeout=5, allow_redirects=True)
-                    final_url = response_final.url
-                    final_status = response_final.status_code
-
-                    if final_status == 200:
-                        message_lines.append(f"{final_url} is up!")
-                    elif final_status == 404:
-                        message_lines.append(f"{final_url} Page wasn't found 😔")
-                    else:
-                        message_lines.append("Website does not exist 😔")
-                except requests.exceptions.RequestException:
-                    message_lines.append("Website does not exist 😔")
+                    final_url = "Website does not exist 😔"
             except requests.exceptions.RequestException:
-                message_lines.append("Website does not exist 😔")
-                message_lines.append("Website does not exist 😔")
+                final_url = "Website does not exist 😔"
         else:
-            message_lines.append("Website does not exist 😔")
-            message_lines.extend(["", ""])
-            return jsonify({"result": "\n".join(message_lines)})
+            final_url = "Website does not exist 😔"
 
     except requests.exceptions.RequestException:
-        message_lines.append("Website does not exist 😔")
-        message_lines.extend(["", ""])
-        return jsonify({"result": "\n".join(message_lines)})
+        final_url = "Website does not exist 😔"
 
-    # Fill to 3 lines
-    while len(message_lines) < 3:
-        message_lines.append("")
-
-    return jsonify({"result": "\n".join(message_lines)})
+    return jsonify({
+        "status": "Completed",
+        "status_http": str(status_http),
+        "status_https": str(status_https),
+        "status_final": str(status_final),
+        "final_url": final_url
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
