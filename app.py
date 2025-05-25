@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
-from urllib.parse import urlparse
 
 app = Flask(__name__)
 CORS(app)
@@ -25,15 +24,8 @@ def scan():
     try:
         response = requests.get(website, timeout=5)
 
-        # Extract the domain name for a user-friendly output
-        parsed_url = urlparse(website)
-        domain = parsed_url.hostname or website
-        friendly_name = domain.split('.')[0].capitalize()
-
-        if response.status_code == 200:
-            return jsonify({"result": f"{friendly_name} is up and running!"})
-        else:
-            return jsonify({"result": f"{friendly_name} responded with status code: {response.status_code}"})
+        # If the server responds at all, treat it as up!
+        return jsonify({"result": f"{website} is up!"})
 
     except requests.exceptions.RequestException:
         return jsonify({"error": "Website was not found 😔"}), 404
