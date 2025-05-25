@@ -17,20 +17,20 @@ def scan():
     if not website:
         return jsonify({"error": "Missing website parameter"}), 400
 
-    # Prepend http:// if not included
-    if not website.startswith(("http://", "https://")):
-        website = f"http://{website}"
+    # Remove any scheme (http/https) from input
+    domain = website.replace("http://", "").replace("https://", "").strip("/")
 
     try:
-        response = requests.get(website, timeout=5)
-
-        # If the server responds at all, treat it as up!
-        return jsonify({"result": f"{website} is up!"})
-
+        # Try HTTPS first
+        response = requests.get(f"https://{domain}", timeout=5)
+        return jsonify({"result": f"https://{domain} is up!"})
     except requests.exceptions.RequestException:
-        return jsonify({"error": "Website was not found 😔"}), 404
-    except Exception:
-        return jsonify({"error": "Website was not found 😔"}), 404
+        # If HTTPS fails, try HTTP
+        try:
+            response = requests.get(f"http://{domain}", timeout=5)
+            return jsonify({"result": f"http://{domain} is up!"})
+        except requests.exceptions.RequestException:
+            return jsonify({"error": "Website was not found 😔"}), 404
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
