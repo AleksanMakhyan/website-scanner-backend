@@ -1,6 +1,10 @@
 from flask import Flask, request, jsonify
 import subprocess
 
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ Backend is running!"
+
 app = Flask(__name__)
 
 @app.route("/api/scan", methods=["POST"])
