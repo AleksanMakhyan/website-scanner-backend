@@ -21,7 +21,7 @@ def scan():
     base_http = f"http://{domain}"
     base_https = f"https://{domain}"
 
-    # Store status codes
+    # Initialize status codes and final URL
     status_http = "N/A"
     status_https = "N/A"
     status_final = "N/A"
@@ -33,19 +33,37 @@ def scan():
         status_http = response_http.status_code
 
         if status_http == 200:
+            # Homepage found!
             final_url = base_http
             status_final = status_http
+            return jsonify({
+                "status": "Completed",
+                "status_http": str(status_http),
+                "status_https": "N/A",
+                "status_final": str(status_final),
+                "final_url": final_url
+            })
+
         elif 300 <= status_http < 310:
-            # HTTPS check
+            # Check HTTPS
             try:
                 response_https = requests.get(base_https, timeout=5, allow_redirects=False)
                 status_https = response_https.status_code
 
                 if status_https == 200:
+                    # HTTPS homepage found!
                     final_url = base_https
                     status_final = status_https
+                    return jsonify({
+                        "status": "Completed",
+                        "status_http": str(status_http),
+                        "status_https": str(status_https),
+                        "status_final": str(status_final),
+                        "final_url": final_url
+                    })
+
                 elif 300 <= status_https < 310:
-                    # Follow HTTPS redirects
+                    # Follow HTTPS redirects to final URL
                     try:
                         response_final = requests.get(base_https, timeout=5, allow_redirects=True)
                         final_url = response_final.url
