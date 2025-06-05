@@ -1,94 +1,109 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, render_template, request
 import requests
-import os
+import socket
+import ssl
 
 app = Flask(__name__)
-CORS(app)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "✅ Backend is running!"
-
-@app.route("/api/scan", methods=["POST"])
-def scan():
-    data = request.get_json()
-    website = data.get("website")
-    if not website:
-        return jsonify({"error": "Missing website parameter"}), 400
-
-    domain = website.replace("http://", "").replace("https://", "").strip("/")
-    base_http = f"http://{domain}"
-    base_https = f"https://{domain}"
-
-    # Initialize status codes and final URL
-    status_http = "N/A"
-    status_https = "N/A"
-    status_final = "N/A"
-    final_url = "N/A"
-
+def check_http_headers(url: str) -> dict | None:
+    """
+    Perform a HEAD request on the given URL and return its response headers.
+    Returns None if the request fails.
+    """
     try:
-        # HTTP check
-        response_http = requests.get(base_http, timeout=5, allow_redirects=False)
-        status_http = response_http.status_code
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return dict(response.headers)
+    except Exception:
+        return None
 
-        if status_http == 200:
-            # Homepage found!
-            final_url = base_http
-            status_final = status_http
-            return jsonify({
-                "status": "Completed",
-                "status_http": str(status_http),
-                "status_https": "N/A",
-                "status_final": str(status_final),
-                "final_url": final_url
-            })
+def check_common_ports(hostname: str) -> list[int]:
+    """
+    Try to connect to a handful of common ports on the given hostname.
+    Returns a list of ports that appear to be open.
+    """
+    COMMON_PORTS = [21, 22, 23, 80, 443, 3306, 8080]
+    open_ports: list[int] = []
+    for port in COMMON_PORTS:
+        try:
+            sock = socket.create_connection((hostname, port), timeout=2)
+            sock.close()
+            open_ports.append(port)
+        except Exception:
+            # If connection fails or times out, treat as closed/filtered
+            pass
+    return open_ports
 
-        elif 300 <= status_http < 310:
-            # Check HTTPS
-            try:
-                response_https = requests.get(base_https, timeout=5, allow_redirects=False)
-                status_https = response_https.status_code
+def check_ssl_certificate(url: str) -> dict | None:
+    """
+    If the URL begins with "https://", attempt to retrieve the SSL certificate.
+    Returns a dict with issuer, subject, notAfter (expiry), or None on failure.
+    """
+    try:
+        # Strip protocol + path to get bare hostname
+        hostname = (
+            url.replace("https://", "")
+               .replace("http://", "")
+               .split("/")[0]
+        )
+        ctx = ssl.create_default_context()
+        # Wrap a socket to perform an SSL handshake
+        with ctx.wrap_socket(socket.socket(), server_hostname=hostname) as s:
+            s.settimeout(3)
+            s.connect((hostname, 443))
+            cert = s.getpeercert()
+            # Build a simpler dict from the certificate fields:
+            issuer = { item[0][0]: item[0][1] for item in cert.get("issuer", []) }
+            subject = { item[0][0]: item[0][1] for item in cert.get("subject", []) }
+            return {
+                "issuer": issuer,
+                "subject": subject,
+                "notAfter": cert.get("notAfter")
+            }
+    except Exception:
+        return None
 
-                if status_https == 200:
-                    # HTTPS homepage found!
-                    final_url = base_https
-                    status_final = status_https
-                    return jsonify({
-                        "status": "Completed",
-                        "status_http": str(status_http),
-                        "status_https": str(status_https),
-                        "status_final": str(status_final),
-                        "final_url": final_url
-                    })
+@app.route("/", methods=["GET", "POST"])
+def index():
+    result: dict | None = None
 
-                elif 300 <= status_https < 310:
-                    # Follow HTTPS redirects to final URL
-                    try:
-                        response_final = requests.get(base_https, timeout=5, allow_redirects=True)
-                        final_url = response_final.url
-                        status_final = response_final.status_code
-                    except requests.exceptions.RequestException:
-                        final_url = "Website does not exist 😔"
-                        status_final = "N/A"
-                else:
-                    final_url = "Website does not exist 😔"
-            except requests.exceptions.RequestException:
-                final_url = "Website does not exist 😔"
+    if request.method == "POST":
+        raw_url = request.form.get("url", "").strip()
+        if not raw_url:
+            return render_template("index.html", result={"error": "Please enter a valid URL."})
+
+        # Ensure protocol prefix
+        if not raw_url.startswith(("http://", "https://")):
+            target_url = "http://" + raw_url
         else:
-            final_url = "Website does not exist 😔"
+            target_url = raw_url
 
-    except requests.exceptions.RequestException:
-        final_url = "Website does not exist 😔"
+        # 1) Fetch HTTP headers
+        headers = check_http_headers(target_url)
 
-    return jsonify({
-        "status": "Completed",
-        "status_http": str(status_http),
-        "status_https": str(status_https),
-        "status_final": str(status_final),
-        "final_url": final_url
-    })
+        # 2) Determine hostname for port scanning
+        hostname = (
+            target_url.replace("https://", "")
+                      .replace("http://", "")
+                      .split("/")[0]
+        )
+
+        # 3) Scan common ports
+        open_ports = check_common_ports(hostname)
+
+        # 4) If HTTPS, get SSL certificate info
+        ssl_info = None
+        if target_url.lower().startswith("https://"):
+            ssl_info = check_ssl_certificate(target_url)
+
+        result = {
+            "url": target_url,
+            "headers": headers,
+            "open_ports": open_ports,
+            "ssl_info": ssl_info
+        }
+
+    return render_template("index.html", result=result)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    # Run in debug mode for development. In production, disable debug=True.
+    app.run(host="0.0.0.0", port=5000, debug=True)
